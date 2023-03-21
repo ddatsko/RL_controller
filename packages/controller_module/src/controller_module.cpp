@@ -75,7 +75,10 @@ namespace controller_module {
         std::mutex mutex_params_;
 
 
+        std::mutex m_uav_state_mutex;
+        std::mutex m_model_mutex;
         torch::jit::script::Module m_policy_module;
+        int m_update_counter = 0;
     };
 
 //}
@@ -172,63 +175,119 @@ namespace controller_module {
 /* update() //{ */
 
     const mrs_msgs::AttitudeCommand::ConstPtr
-    ControllerModule::update([[maybe_unused]] const mrs_msgs::UavState::ConstPtr &uav_state,
+    ControllerModule::update([[maybe_unused]] const mrs_msgs::UavState::ConstPtr &uav_state_p,
                              [[maybe_unused]] const mrs_msgs::PositionCommand::ConstPtr &control_reference) {
 
         if (!is_active_) {
             return mrs_msgs::AttitudeCommand::ConstPtr();
         }
 
+
         if (control_reference == mrs_msgs::PositionCommand::Ptr()) {
             return mrs_msgs::AttitudeCommand::ConstPtr();
         }
 
-        auto params = mrs_lib::get_mutexed(mutex_params_, params_);
+        mrs_msgs::UavState uav_state;
+        {
+            std::scoped_lock{m_uav_state_mutex};
+            uav_state = *uav_state_p;
+        }
 
-        // current state
-        Eigen::Vector3d cur_pos(uav_state->pose.position.x, uav_state->pose.position.y, uav_state->pose.position.z);
-        Eigen::Vector3d cur_vel(uav_state->velocity.linear.x, uav_state->velocity.linear.y,
-                                uav_state->velocity.linear.z);
+        // Get rotation matrix from orientation quaternion
+        Eigen::Quaterniond orientation_q;
+        orientation_q.x() = uav_state.pose.orientation.x;
+        orientation_q.y() = uav_state.pose.orientation.y;
+        orientation_q.z() = uav_state.pose.orientation.z;
+        orientation_q.w() = uav_state.pose.orientation.w;
+        Eigen::Matrix3d R = orientation_q.normalized().toRotationMatrix();
 
-        // reference
-        Eigen::Vector3d ref_pos(control_reference->position.x, control_reference->position.y,
-                                control_reference->position.z);
-        Eigen::Vector3d ref_vel(control_reference->velocity.x, control_reference->velocity.y,
-                                control_reference->velocity.z);
-        Eigen::Vector3d ref_acc(control_reference->acceleration.x, control_reference->acceleration.y,
-                                control_reference->acceleration.z);
+        // Fill in model inputs. TODO: check if these are correct values
+        float model_input[18];
+        model_input[0] = uav_state.pose.position.x;
+        model_input[1] = uav_state.pose.position.y;
+        model_input[2] = uav_state.pose.position.z;
 
-        // controller errors
-        Eigen::Vector3d ep = ref_pos - cur_pos;
-        Eigen::Vector3d ev = ref_vel - cur_vel;
+        model_input[3] = uav_state.velocity.linear.x;
+        model_input[4] = uav_state.velocity.linear.y;
+        model_input[5] = uav_state.velocity.linear.z;
 
-        // feedforward
-        Eigen::Vector3d feed_forward = _uav_mass_ * (Eigen::Vector3d(0, 0, common_handlers_->g) + ref_acc);
+        // Fill in orientation matrix values
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                model_input[6 + i * 3 + j] = R(i, j);
+            }
+        }
 
-        // gains
-        Eigen::Array3d kp = Eigen::Array3d(params.kpxy, params.kpxy, params.kpz);
-        Eigen::Array3d kv = Eigen::Array3d(params.kvxy, params.kvxy, params.kvz);
+        // Considering the reference from tracker. With hovering scenario, this should be fine
+        model_input[15] = 0 - uav_state.pose.position.x;
+        model_input[16] = 0 - uav_state.pose.position.y;
+        model_input[17] = 5 - uav_state.pose.position.z;
+//        model_input[15] = control_reference->position.x - uav_state.pose.position.x;
+//        model_input[16] = control_reference->position.y - uav_state.pose.position.y;
+//        model_input[17] = control_reference->position.z - uav_state.pose.position.z;
 
-        // feedbacks
-        Eigen::Vector3d position_feedback = kp * ep.array();
-        Eigen::Vector3d velocity_feedback = kv * ev.array();
+        torch::Tensor input_tensor = torch::from_blob(model_input, {1, 18});
+        torch::IValue input_ivalue{input_tensor};
 
-        // desired force
-        Eigen::Vector3d f = position_feedback + velocity_feedback + feed_forward;
 
-        // desired heading vector
-        Eigen::Vector3d bxd = Eigen::Vector3d(cos(control_reference->heading), sin(control_reference->heading), 0);
-
-        // create desired orientation
-        Eigen::Matrix3d Rd;
-
-        Rd.col(2) = f.normalized();
-        Rd.col(1) = Rd.col(2).cross(bxd);
-        Rd.col(1).normalize();
-        Rd.col(0) = Rd.col(1).cross(Rd.col(2));
-        Rd.col(0).normalize();
-
-        double des_throttle = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, f.norm());
+        torch::Tensor model_output;
+        {
+            std::scoped_lock{m_model_mutex};
+            model_output = m_policy_module.forward({input_ivalue}).toTensor();
+        }
+        /*
+//        m_update_counter++;
+//        if (m_update_counter % 100 == 0) {
+//            ROS_INFO_STREAM("[ControllerModule]: 100 updates: " << m_update_counter);
+//        }
+//
+//
+//        auto params = mrs_lib::get_mutexed(mutex_params_, params_);
+//
+//        // current state
+//        Eigen::Vector3d cur_pos(uav_state->pose.position.x, uav_state->pose.position.y, uav_state->pose.position.z);
+//        Eigen::Vector3d cur_vel(uav_state->velocity.linear.x, uav_state->velocity.linear.y,
+//                                uav_state->velocity.linear.z);
+//
+//        // reference
+//        Eigen::Vector3d ref_pos(control_reference->position.x, control_reference->position.y,
+//                                control_reference->position.z);
+//        Eigen::Vector3d ref_vel(control_reference->velocity.x, control_reference->velocity.y,
+//                                control_reference->velocity.z);
+//        Eigen::Vector3d ref_acc(control_reference->acceleration.x, control_reference->acceleration.y,
+//                                control_reference->acceleration.z);
+//
+//        // controller errors
+//        Eigen::Vector3d ep = ref_pos - cur_pos;
+//        Eigen::Vector3d ev = ref_vel - cur_vel;
+//
+//        // feedforward
+//        Eigen::Vector3d feed_forward = _uav_mass_ * (Eigen::Vector3d(0, 0, common_handlers_->g) + ref_acc);
+//
+//        // gains
+//        Eigen::Array3d kp = Eigen::Array3d(params.kpxy, params.kpxy, params.kpz);
+//        Eigen::Array3d kv = Eigen::Array3d(params.kvxy, params.kvxy, params.kvz);
+//
+//        // feedbacks
+//        Eigen::Vector3d position_feedback = kp * ep.array();
+//        Eigen::Vector3d velocity_feedback = kv * ev.array();
+//
+//        // desired force
+//        Eigen::Vector3d f = position_feedback + velocity_feedback + feed_forward;
+//
+//        // desired heading vector
+//        Eigen::Vector3d bxd = Eigen::Vector3d(cos(control_reference->heading), sin(control_reference->heading), 0);
+//
+//        // create desired orientation
+//        Eigen::Matrix3d Rd;
+//
+//        Rd.col(2) = f.normalized();
+//        Rd.col(1) = Rd.col(2).cross(bxd);
+//        Rd.col(1).normalize();
+//        Rd.col(0) = Rd.col(1).cross(Rd.col(2));
+//        Rd.col(0).normalize();
+//
+//        double des_throttle = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, f.norm());
 
         // | --------------- prepare the attitude output -------------- |
 
@@ -248,6 +307,28 @@ namespace controller_module {
         output_command->controller = "ControllerModule";
 
         return output_command;
+         */
+        mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
+        output_command->header.stamp = ros::Time::now();
+
+//        output_command->thrust = model_output[0].item<float>();
+        output_command->thrust = 0.9;
+        output_command->mode_mask = output_command->MODE_ATTITUDE;
+
+        output_command->mass_difference = 0;
+        output_command->total_mass = _uav_mass_;
+
+//        output_command->attitude.x
+        output_command->attitude_rate.x = model_output[1].item<float>();
+        output_command->attitude_rate.y = model_output[2].item<float>();
+        output_command->attitude_rate.z = model_output[3].item<float>();
+
+        output_command->controller_enforcing_constraints = false;
+
+        output_command->controller = "ControllerModule";
+
+        return output_command;
+
     }
 
 //}
