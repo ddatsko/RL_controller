@@ -21,6 +21,7 @@ set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${Eigen_LIBRARIES})
 
 # TODO: replace this with some general path (maybe from env) for now, everyone after cloning needs to replace this with own path
+set(CMAKE_CUDA_COMPILER /usr/local/cuda-12/bin/nvcc)
 set(CMAKE_PREFIX_PATH /usr/local/lib/libtorch)
 find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
