@@ -243,7 +243,6 @@ namespace controller_module {
         torch::Tensor input_tensor = torch::from_blob(model_input, {1, 18});
         torch::IValue input_ivalue{input_tensor};
 
-
         torch::Tensor model_output;
         {
             std::scoped_lock l{m_model_mutex};
@@ -264,12 +263,12 @@ namespace controller_module {
         output_command->attitude_rate.y = model_output[0][2].item<float>();
         output_command->attitude_rate.z = model_output[0][3].item<float>();
 
-        ROS_INFO_STREAM("[ControllerModule]: Desired body rates: " << model_output[1].item<float>() << ", " << model_output[2].item<float>() << ", " << model_output[3].item<float>());
+        ROS_INFO_STREAM("[ControllerModule]: Desired body rates: " << model_output[0][1].item<float>() << ", " << model_output[0][2].item<float>() << ", " << model_output[0][3].item<float>());
 
         output_command->controller_enforcing_constraints = false;
 
         output_command->controller = "ControllerModule";
-        
+
         return output_command;
 
     }
