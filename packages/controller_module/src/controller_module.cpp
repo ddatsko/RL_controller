@@ -11,6 +11,7 @@
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/publisher_handler.h>
 #include <mrs_lib/subscribe_handler.h>
+#include <geometry_msgs/PoseStamped.h>
 
 #include <dynamic_reconfigure/server.h>
 #include <controller_module/controller_paramsConfig.h>
@@ -189,10 +190,27 @@ namespace controller_module {
 
         mrs_msgs::UavState uav_state;
         {
-//            std::scoped_lock{m_uav_state_mutex} l;
+            std::scoped_lock l{m_uav_state_mutex};
             uav_state = *uav_state_p;
         }
-//
+
+        // Hardcoded point to travel to
+        // Convert point to UAV coordinates fram
+        geometry_msgs::PoseStamped reference_point;
+        reference_point.header.frame_id = uav_state.header.frame_id;
+        reference_point.pose.position.x = 2;
+        reference_point.pose.position.y = 2;
+        reference_point.pose.position.z = 2;
+
+        ROS_INFO_STREAM("[ControllerModule]: Frame id of uav state: " << uav_state.header.frame_id);
+
+        auto reference_point_transformed = common_handlers_->transformer->transformSingle(reference_point, "fcu");
+
+        if (!reference_point_transformed.has_value()) {
+            ROS_ERROR_STREAM("[ControllerModule]: Could not transform reference point to UAV coordinate frame");
+            return mrs_msgs::AttitudeCommand::ConstPtr();
+        }
+
 //        // Get rotation matrix from orientation quaternion
         Eigen::Quaterniond orientation_q;
         orientation_q.x() = uav_state.pose.orientation.x;
@@ -218,13 +236,9 @@ namespace controller_module {
             }
         }
 
-        // Considering the reference from tracker. With hovering scenario, this should be fine
-        model_input[15] = 0 - uav_state.pose.position.x;
-        model_input[16] = 0 - uav_state.pose.position.y;
-        model_input[17] = 5 - uav_state.pose.position.z;
-//        model_input[15] = control_reference->position.x - uav_state.pose.position.x;
-//        model_input[16] = control_reference->position.y - uav_state.pose.position.y;
-//        model_input[17] = control_reference->position.z - uav_state.pose.position.z;
+        model_input[15] = reference_point_transformed.value().pose.position.x;
+        model_input[16] = reference_point_transformed.value().pose.position.y;
+        model_input[17] = reference_point_transformed.value().pose.position.z;
 
         torch::Tensor input_tensor = torch::from_blob(model_input, {1, 18});
         torch::IValue input_ivalue{input_tensor};
@@ -232,7 +246,7 @@ namespace controller_module {
 
         torch::Tensor model_output;
         {
-//            std::scoped_lock{m_model_mutex} l;
+            std::scoped_lock l{m_model_mutex};
             model_output = m_policy_module.forward({input_ivalue}).toTensor();
         }
 
@@ -250,13 +264,12 @@ namespace controller_module {
         output_command->attitude_rate.y = model_output[0][2].item<float>();
         output_command->attitude_rate.z = model_output[0][3].item<float>();
 
-//        ROS_INFO_STREAM("[ControllerModule]: body rates: " << model_output[1].item<float>() << ", " << model_output[2].item<float>() << ", " << model_output[3].item<float>());
+        ROS_INFO_STREAM("[ControllerModule]: Desired body rates: " << model_output[1].item<float>() << ", " << model_output[2].item<float>() << ", " << model_output[3].item<float>());
 
         output_command->controller_enforcing_constraints = false;
 
         output_command->controller = "ControllerModule";
-
-        ROS_INFO_ONCE("[ControllerModule]: returning value for update()");
+        
         return output_command;
 
     }

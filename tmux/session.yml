@@ -36,7 +36,7 @@ windows:
   - goto:
       layout: tiled
       panes:
-        - 'history -s rosservice call /$UAV_NAME/control_manager/goto \"goal: \[0.0, 10.0, 1.5, 0.0\]\"'
+        - 'history -s rosservice call /$UAV_NAME/control_manager/goto \"goal: \[0.0, 0.0, 2, 0.0\]\"'
   - rviz:
       layout: tiled
       panes:
