@@ -44,19 +44,19 @@ safety:
 
     eland:
       enabled: true
-      limit: deg(75) # [rad]
+      limit: deg(150) # [rad]
 
     disarm:
       enabled: true
-      limit: deg(75) # [rad]
+      limit: deg(150) # [rad]
 
   tilt_error_disarm:
     enabled: true
-    timeout: 0.5 # [s] # for how long the error has to be present to disarm
+    timeout: 4 # [s] # for how long the error has to be present to disarm
     error_threshold: deg(20) # [rad]
 
   yaw_error_eland:
-    enabled: true
+    enabled: false
     limit: deg(90) # [rad]
 
   # tracker used for emergency hover routine

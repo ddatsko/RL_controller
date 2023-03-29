@@ -30,25 +30,59 @@ namespace controller_module {
 
     class ControllerModule : public mrs_uav_managers::Controller {
 
+        class Goal {
+        public:
+            Eigen::Vector3d position;
+            Eigen::Vector3d direction;
+            double tolerance;
+
+            Goal(const Eigen::Vector3d &position, const Eigen::Vector3d &direction, double tolerance) :
+                    position{position}, direction{direction}, tolerance{tolerance} {};
+
+            [[nodiscard]] bool reached(const Eigen::Vector3d &prev_pos, const Eigen::Vector3d &current_pos) const {
+                Eigen::Vector3d v = current_pos - prev_pos;  // step movement vector
+                Eigen::Vector3d n = direction;           // goal direction vector
+                double vTn = v.dot(n);          // dot product of the vector
+
+                // either runs in parallel or passed in other direction
+                if (vTn <= 0.0) return false;
+
+                Eigen::Vector3d a = prev_pos - position;  // vector from initial position to goal position
+                // how many times the current would be taken to pass the goal (can be
+                // negative)
+                double t = -(a.dot(n) / vTn);
+                if (t >= 0 && t <= 1) {  // only these values mean agent passed by the goal in
+                    // the current time-step
+                    Eigen::Vector3d intersect = a + t * v;  // intersection point
+                    if (intersect.norm() <= tolerance)  // is the intersection point within tolerance
+                        return true;
+
+                }
+                return false;
+            }
+
+        };
+
+
     public:
-        ~ControllerModule() {};
+        ~ControllerModule() override = default;
 
-        void initialize(const ros::NodeHandle &parent_nh, const std::string name, const std::string name_space,
-                        const double uav_mass,
-                        std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
+        void initialize(const ros::NodeHandle &parent_nh, std::string name, std::string name_space,
+                        double uav_mass,
+                        std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) override;
 
-        bool activate(const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
+        bool activate(const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) override;
 
-        void deactivate(void);
+        void deactivate() override;
 
         const mrs_msgs::AttitudeCommand::ConstPtr update(const mrs_msgs::UavState::ConstPtr &uav_state,
-                                                         const mrs_msgs::PositionCommand::ConstPtr &control_reference);
+                                                         const mrs_msgs::PositionCommand::ConstPtr &control_reference) override;
 
-        const mrs_msgs::ControllerStatus getStatus();
+        const mrs_msgs::ControllerStatus getStatus() override;
 
-        void switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state);
+        void switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) override;
 
-        void resetDisturbanceEstimators(void);
+        void resetDisturbanceEstimators() override;
 
         const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr
         setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd);
@@ -59,9 +93,15 @@ namespace controller_module {
 
         std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
 
-        double _uav_mass_;
+        std::vector<Goal> m_goals_to_reach;
 
-        double hover_thrust_;
+        // Just default values to not leave fields uninitialized. All will be replaced in initialize() function
+        double _uav_mass_ = 3.5;
+        double hover_thrust_ = 0;
+        double m_uav_mass = 3.5;
+        size_t m_current_goal_index = 0;
+//        std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> points_to_visit;
+
 
         // | --------------- dynamic reconfigure server --------------- |
 
@@ -79,7 +119,9 @@ namespace controller_module {
         std::mutex m_uav_state_mutex;
         std::mutex m_model_mutex;
         torch::jit::script::Module m_policy_module;
-        int m_update_counter = 0;
+        Eigen::Vector3d m_prev_pos;
+
+//        static bool goal_passed(in)
     };
 
 //}
@@ -105,11 +147,22 @@ namespace controller_module {
         // | ------------------- loading parameters ------------------- |
 
         mrs_lib::ParamLoader param_loader(nh_, "ControllerModule");
-        std::string policy_filename = "/home/mrs/flightsim/test.pt";
 
         /* TODO: move this to parameters inside a normal namespace. Current problem is that
         if working with ParamLoader, a custom prefix should be set or control_manager.launch file should be changed */
-//        param_loader.loadParam("/policy_file", policy_filename);
+        std::string policy_filename = "/home/mrs/flightsim/test.pt";
+
+        // TODO: Read this from some parameter
+        m_uav_mass = 3.5;
+
+        // TODO: read this from some config file of ROS parameter too
+        m_current_goal_index = 0;
+        m_prev_pos = {0, 0, 0};
+        m_goals_to_reach.emplace_back(Eigen::Vector3d{2.0, 2.0, 2.0}, Eigen::Vector3d{1.0, 1.0, 1.0}, 0.5);
+        m_goals_to_reach.emplace_back(Eigen::Vector3d{3.0, 3.0, 4.0}, Eigen::Vector3d{0.0, 0.0, 1.0}, 0.5);
+        m_goals_to_reach.emplace_back(Eigen::Vector3d{0.0, 0.0, 5.0}, Eigen::Vector3d{-1.0, -1.0, 0.0}, 0.5);
+        m_goals_to_reach.emplace_back(Eigen::Vector3d{-2.0, 0.0, 3.0}, Eigen::Vector3d{0.0, 0.0, -1.0}, 0.5);
+
 
         if (!param_loader.loadedSuccessfully()) {
             ROS_ERROR("[ControllerModule]: Could not load all parameters!");
@@ -179,14 +232,11 @@ namespace controller_module {
     ControllerModule::update([[maybe_unused]] const mrs_msgs::UavState::ConstPtr &uav_state_p,
                              [[maybe_unused]] const mrs_msgs::PositionCommand::ConstPtr &control_reference) {
 
-        ROS_INFO_ONCE("[ControllerModule]: update()");
+//        ROS_INFO_ONCE("[ControllerModule]: update()");
         if (!is_active_) {
             return mrs_msgs::AttitudeCommand::ConstPtr();
         }
 
-//        if (control_reference == mrs_msgs::PositionCommand::Ptr()) {
-//            return mrs_msgs::AttitudeCommand::ConstPtr();
-//        }
 
         mrs_msgs::UavState uav_state;
         {
@@ -194,24 +244,19 @@ namespace controller_module {
             uav_state = *uav_state_p;
         }
 
-        // Hardcoded point to travel to
-        // Convert point to UAV coordinates fram
-        geometry_msgs::PoseStamped reference_point;
-        reference_point.header.frame_id = uav_state.header.frame_id;
-        reference_point.pose.position.x = 2;
-        reference_point.pose.position.y = 2;
-        reference_point.pose.position.z = 2;
-
-        ROS_INFO_STREAM("[ControllerModule]: Frame id of uav state: " << uav_state.header.frame_id);
-
-        auto reference_point_transformed = common_handlers_->transformer->transformSingle(reference_point, "fcu");
-
-        if (!reference_point_transformed.has_value()) {
-            ROS_ERROR_STREAM("[ControllerModule]: Could not transform reference point to UAV coordinate frame");
-            return mrs_msgs::AttitudeCommand::ConstPtr();
+        // Check if the UAV crossed the next waypoint and if it has, update the waypoint to the next one
+        Eigen::Vector3d current_position{uav_state.pose.position.x, uav_state.pose.position.y,
+                                         uav_state.pose.position.z};
+        if (m_goals_to_reach[m_current_goal_index].reached(m_prev_pos, current_position)) {
+            ROS_INFO_STREAM(
+                    "[ControllerModule]: Reached the waypoint: " << m_goals_to_reach[m_current_goal_index].position);
+            m_current_goal_index = std::min(m_current_goal_index + 1, m_goals_to_reach.size() - 1);
+            ROS_INFO_STREAM(
+                    "[ControllerModule]: Reached the waypoint. Next one to follow is number " << m_current_goal_index);
         }
+        m_prev_pos = current_position;
 
-//        // Get rotation matrix from orientation quaternion
+        // Get rotation matrix from orientation quaternion
         Eigen::Quaterniond orientation_q;
         orientation_q.x() = uav_state.pose.orientation.x;
         orientation_q.y() = uav_state.pose.orientation.y;
@@ -221,24 +266,26 @@ namespace controller_module {
 
         // Fill in model inputs. TODO: check if these are correct values
         float model_input[18];
-        model_input[0] = uav_state.pose.position.x;
-        model_input[1] = uav_state.pose.position.y;
-        model_input[2] = uav_state.pose.position.z;
+        model_input[0] = static_cast<float>(uav_state.pose.position.x);
+        model_input[1] = static_cast<float>(uav_state.pose.position.y);
+        model_input[2] = static_cast<float>(uav_state.pose.position.z);
 
-        model_input[3] = uav_state.velocity.linear.x;
-        model_input[4] = uav_state.velocity.linear.y;
-        model_input[5] = uav_state.velocity.linear.z;
+        model_input[3] = static_cast<float>(uav_state.velocity.linear.x);
+        model_input[4] = static_cast<float>(uav_state.velocity.linear.y);
+        model_input[5] = static_cast<float>(uav_state.velocity.linear.z);
 
         // Fill in orientation matrix values
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                model_input[6 + i * 3 + j] = R(i, j);
-            }
+        double *R_data = R.data();
+        for (int i = 6; i < 6 + 9; ++i) {
+            model_input[i] = static_cast<float>(R_data[i - 6]);
         }
 
-        model_input[15] = reference_point_transformed.value().pose.position.x;
-        model_input[16] = reference_point_transformed.value().pose.position.y;
-        model_input[17] = reference_point_transformed.value().pose.position.z;
+        model_input[15] = static_cast<float>(m_goals_to_reach[m_current_goal_index].position.x() -
+                                             uav_state.pose.position.x);
+        model_input[16] = static_cast<float>(m_goals_to_reach[m_current_goal_index].position.y() -
+                                             uav_state.pose.position.y);
+        model_input[17] = static_cast<float>(m_goals_to_reach[m_current_goal_index].position.z() -
+                                             uav_state.pose.position.z);
 
         torch::Tensor input_tensor = torch::from_blob(model_input, {1, 18});
         torch::IValue input_ivalue{input_tensor};
@@ -252,18 +299,28 @@ namespace controller_module {
         mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
         output_command->header.stamp = ros::Time::now();
 
-        double model_thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, model_output[0][0].item<float>());
+        double model_thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params,
+                                                                             model_output[0][0].item<float>() *
+                                                                             m_uav_mass);
         output_command->thrust = model_thrust;
         output_command->mode_mask = output_command->MODE_ATTITUDE_RATE;
 
         output_command->mass_difference = 0;
-        output_command->total_mass = _uav_mass_;
+        output_command->total_mass = m_uav_mass;
 
         output_command->attitude_rate.x = model_output[0][1].item<float>();
         output_command->attitude_rate.y = model_output[0][2].item<float>();
         output_command->attitude_rate.z = model_output[0][3].item<float>();
 
-        ROS_INFO_STREAM("[ControllerModule]: Desired body rates: " << model_output[0][1].item<float>() << ", " << model_output[0][2].item<float>() << ", " << model_output[0][3].item<float>());
+        ROS_DEBUG_STREAM("[ControllerModule]: UAV position: \n" << uav_state.pose.position << "\n" <<
+                                                                "UAV rotation: " << R << "\n" <<
+                                                                "Current reference point: "
+                                                                << m_goals_to_reach[m_current_goal_index].position <<
+                                                                "Desired body rates: "
+                                                                << model_output[0][1].item<float>() << ", "
+                                                                << model_output[0][2].item<float>() << ", "
+                                                                << model_output[0][3].item<float>() << "\n" <<
+                                                                "Desired thrust: " << output_command->thrust << "\n\n");
 
         output_command->controller_enforcing_constraints = false;
 
