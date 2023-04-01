@@ -25,6 +25,11 @@ windows:
       layout: tiled
       panes:
         - waitForOdometry; roslaunch mrs_uav_general core.launch config_uav_manager:=./custom_configs/uav_manager.yaml config_control_manager:=./custom_configs/control_manager_not_safe.yaml
+  - goal_checker:
+      layout: tiled
+      panes:
+        - waitForOdometry; roslaunch rl_goals_checker rl_goals_checker.launch
+ 
   - takeoff:
       layout: tiled
       panes:
