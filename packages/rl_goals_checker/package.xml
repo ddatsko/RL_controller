@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="2">
+
+  <name>rl_goals_checker</name>
+  <version>1.0.0</version>
+  <description>more_desctription</description>
+
+  <maintainer email="datskden@fel.cvut.cz">Denys Datsko</maintainer>
+  <author email="datskden@fel.cvut.cz">Denys Datsko</author>
+
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>nodelet</depend>
+  <depend>std_msgs</depend>
+  <depend>mrs_lib</depend>
+  <depend>nav_msgs</depend>
+
+  <export>
+    <nodelet plugin="${prefix}/plugins.xml" />
+  </export>
+
+</package>

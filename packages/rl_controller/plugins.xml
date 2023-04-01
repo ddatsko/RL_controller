@@ -1,0 +1,5 @@
+<library path="lib/libRLController">
+  <class name="rl_controller/RLController" type="rl_controller::RLController" base_class_type="mrs_uav_managers::Controller">
+    <description>Reinforcement Learning controller</description>
+  </class>
+</library>

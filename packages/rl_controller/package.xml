@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>controller_module</name>
+  <name>rl_controller</name>
   <version>1.0.0</version>
-  <description>Controller module</description>
+  <description>Reinforcement Learning controller</description>
 
-  <author email="tomas.baca@fel.cvut.cz">Tomas Baca</author>
-  <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
+  <author email="datskden@fel.cvut.cz">Denys Datsko</author>
+  <maintainer email="datskden@fel.cvut.cz">Denys Datsko</maintainer>
 
   <license>BSD 3-Clause</license>
 

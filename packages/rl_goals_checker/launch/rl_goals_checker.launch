@@ -1,0 +1,43 @@
+<launch>
+
+    <!-- defines name of the namespace of the drone -->
+    <arg name="UAV_NAME" default="$(env UAV_NAME)" />
+    <arg name="RUN_TYPE" default="$(env RUN_TYPE)" />
+
+    <!-- set to false if the nodelet should run under an external nodelet manager -->
+    <arg name="standalone" default="true" />
+
+    <!-- will it run using GNU debugger? -->
+    <arg name="debug" default="false" />
+    <arg unless="$(arg debug)" name="launch_prefix_debug" value=""/>
+    <arg     if="$(arg debug)" name="launch_prefix_debug" value="debug_roslaunch"/>
+
+    <!-- will it run as standalone nodelet or using a nodelet manager? -->
+    <arg name="manager" default="$(arg UAV_NAME)_rl_goals_checker_manager" />
+    <arg     if="$(arg standalone)" name="nodelet" value="standalone"/>
+    <arg unless="$(arg standalone)" name="nodelet" value="load"/>
+    <arg     if="$(arg standalone)" name="nodelet_manager" value=""/>
+    <arg unless="$(arg standalone)" name="nodelet_manager" value="$(arg manager)"/>
+
+    <arg name="odometry_topic" default="/$(arg UAV_NAME)/odometry/rtk_local_odom" />
+    <arg name="goal_frame_id" default="$(arg UAV_NAME)/rtk_origin" />
+
+
+    <!-- Namespace - all topics and parameters will be remapped using this namespace as a prefix (eg.: "/vision_example/image_in" to "/uav1/vision_example/image_in") -->
+    <group ns="$(arg UAV_NAME)">
+
+        <!-- RLGoalsChecker nodelet -->
+        <node pkg="nodelet" type="nodelet" name="rl_goals_checker" args="$(arg nodelet) rl_goals_checker/RLGoalsChecker $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
+            <param name="UAV_NAME" type="string" value="$(arg UAV_NAME)"/>
+            <param name="goal_frame_id" type="string" value="$(arg goal_frame_id)" />
+
+            <!-- ROS parameters config file -->
+            <rosparam file="$(find rl_goals_checker)/config/default.yaml" />
+
+            <!-- Subscribers -->
+            <remap from="~odometry_in" to="$(arg odometry_topic)" />
+        </node>
+
+    </group>
+
+</launch>

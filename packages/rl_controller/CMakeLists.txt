@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.1.2)
-project(controller_module)
+project(rl_controller)
 
 find_package(catkin REQUIRED COMPONENTS
         roscpp
@@ -16,15 +16,19 @@ find_package(catkin REQUIRED COMPONENTS
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror")
+endif()
+
 find_package(Eigen3 REQUIRED)
 set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${Eigen_LIBRARIES})
 
 # TODO: replace this with some general path (maybe from env) for now, everyone after cloning needs to replace this with own path
+set(CMAKE_CUDA_COMPILER /usr/local/cuda-12/bin/nvcc)
 set(CMAKE_PREFIX_PATH /usr/local/lib/libtorch)
 find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
-message("Torch libraries found at: ${TORCH_LIBRARIES}")
 
 generate_dynamic_reconfigure_options(
         cfg/controller_params.cfg
@@ -33,7 +37,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
         CATKIN_DEPENDS roscpp nodelet mrs_msgs mrs_uav_managers mrs_lib std_srvs dynamic_reconfigure
         DEPENDS Eigen
-        LIBRARIES ControllerModule
+        LIBRARIES RLController
 )
 
 include_directories(
@@ -44,16 +48,16 @@ include_directories(
 
 # wrapper
 
-add_library(ControllerModule
-        src/controller_module.cpp
+add_library(RLController
+        src/rl_controller.cpp
         )
 
-add_dependencies(ControllerModule
+add_dependencies(RLController
         ${${PROJECT_NAME}_EXPORTED_TARGETS}
         ${catkin_EXPORTED_TARGETS}
         )
 
-target_link_libraries(ControllerModule
+target_link_libraries(RLController
         ${catkin_LIBRARIES}
         ${TORCH_LIBRARIES}
         )
