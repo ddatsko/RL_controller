@@ -115,9 +115,8 @@ namespace rl_controller {
 
         mrs_lib::ParamLoader param_loader(nh_, "RLController");
 
-        /* TODO: move this to parameters inside a normal namespace. Current problem is that
-        if working with ParamLoader, a custom prefix should be set or control_manager.launch file should be changed */
-        std::string policy_filename = "/home/mrs/flightsim/test.pt";
+        std::string policy_filename;
+        param_loader.loadParam("rl_policy_filename", policy_filename);
 
         // TODO: Read this from some parameter
         m_uav_mass = 3.5;

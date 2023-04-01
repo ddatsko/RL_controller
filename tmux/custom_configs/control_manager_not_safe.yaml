@@ -26,6 +26,8 @@ RLController:
   odometry_innovation_threshold: 0.0 # [m], position odometry innovation threshold
   human_switchable: true
 
+rl_controller:
+  rl_policy_filename: "/home/mrs/flightsim/test.pt"
 
 #- this is the "do nothing tracker", which is active when no other is
 null_tracker: "NullTracker"
