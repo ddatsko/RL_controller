@@ -3,7 +3,7 @@
 #include <ros/ros.h>
 
 #include <nav_msgs/Odometry.h>
-#include <mrs_msgs/ReferenceSrv.h>
+#include <mrs_msgs/ReferenceStampedSrv.h>
 
 #include <random>
 
@@ -13,6 +13,7 @@
 #include <mrs_lib/publisher_handler.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Vector3Stamped.h>
 
 #include <dynamic_reconfigure/server.h>
 #include <rl_controller/controller_paramsConfig.h>
@@ -61,11 +62,9 @@ namespace rl_controller {
 
         std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
         // Just default values to not leave fields uninitialized. All will be replaced in initialize() function
-        double _uav_mass_ = 3.5;
-        double hover_thrust_ = 0;
         double m_uav_mass = 3.5;
-
         Eigen::Vector3d m_current_goal;
+        std::string m_current_goal_reference_frame;
 
         // | --------------- dynamic reconfigure server --------------- |
 
@@ -86,7 +85,8 @@ namespace rl_controller {
 
         ros::ServiceServer m_set_goal_service_server;
 
-        bool callback_set_goal(mrs_msgs::ReferenceSrv::Request &req, mrs_msgs::ReferenceSrv::Response &res);
+        bool
+        callback_set_goal(mrs_msgs::ReferenceStampedSrv::Request &req, mrs_msgs::ReferenceStampedSrv::Response &res);
 
 //        static bool goal_passed(in)
     };
@@ -107,7 +107,6 @@ namespace rl_controller {
         ros::NodeHandle nh_(parent_nh, name_space);
 
         common_handlers_ = common_handlers;
-        _uav_mass_ = uav_mass;
 
         ros::Time::waitForValid();
 
@@ -118,8 +117,6 @@ namespace rl_controller {
         std::string policy_filename;
         param_loader.loadParam("rl_policy_filename", policy_filename);
 
-        // TODO: Read this from some parameter
-        m_uav_mass = 3.5;
 
         if (!param_loader.loadedSuccessfully()) {
             ROS_ERROR("[RLController]: Could not load all parameters!");
@@ -137,17 +134,14 @@ namespace rl_controller {
         ROS_INFO("[RLController]: policy file loaded successfully!");
 
 
-        // | ----------- calculate the default hover thrust ----------- |
-        hover_thrust_ = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params,
-                                                                       _uav_mass_ * common_handlers_->g);
-
         // | --------------------------- drs -------------------------- |
 
         drs_.reset(new Drs_t(mutex_drs_, nh_));
         Drs_t::CallbackType f = boost::bind(&RLController::callbackDrs, this, _1, _2);
         drs_->setCallback(f);
 
-        // | ----------------------- finish init ---------------------- |
+        ROS_INFO_STREAM("[RLController]: Setting UAV mass to " << uav_mass);
+        m_uav_mass = uav_mass;
 
         ROS_INFO("[RLController]: initialized");
 
@@ -156,7 +150,9 @@ namespace rl_controller {
 
 //}
 
-    bool RLController::callback_set_goal(mrs_msgs::ReferenceSrv::Request &req, mrs_msgs::ReferenceSrv::Response &res) {
+    bool RLController::callback_set_goal(mrs_msgs::ReferenceStampedSrv::Request &req,
+                                         mrs_msgs::ReferenceStampedSrv::Response &res) {
+        m_current_goal_reference_frame = req.header.frame_id;
         m_current_goal.x() = req.reference.position.x;
         m_current_goal.y() = req.reference.position.y;
         m_current_goal.z() = req.reference.position.z;
@@ -204,17 +200,34 @@ namespace rl_controller {
     RLController::update([[maybe_unused]] const mrs_msgs::UavState::ConstPtr &uav_state_p,
                          [[maybe_unused]] const mrs_msgs::PositionCommand::ConstPtr &control_reference) {
 
-//        ROS_INFO_ONCE("[RLController]: update()");
         if (!is_active_) {
             return mrs_msgs::AttitudeCommand::ConstPtr();
         }
-
 
         mrs_msgs::UavState uav_state;
         {
             std::scoped_lock l{m_uav_state_mutex};
             uav_state = *uav_state_p;
         }
+
+        // Transform uav_state to the same origin as the goal reference frame to properly set the input values for the policy
+        auto transform_to_goal_frame = common_handlers_->transformer->getTransform(uav_state.header.frame_id, m_current_goal_reference_frame);
+        if (!transform_to_goal_frame.has_value()) {
+            ROS_ERROR_STREAM("[RLController]: Could not get transform from frame " << uav_state.header.frame_id << " to " << m_current_goal_reference_frame);
+            return mrs_msgs::AttitudeCommand::ConstPtr();
+        }
+
+        auto position_transformed = common_handlers_->transformer->transform(uav_state.pose.position, transform_to_goal_frame.value());
+        auto orientation_transformed = common_handlers_->transformer->transform(uav_state.pose.orientation, transform_to_goal_frame.value());
+        auto velocity_transformed = common_handlers_->transformer->transform(uav_state.velocity.linear, transform_to_goal_frame.value());
+
+        if (!position_transformed.has_value() || !velocity_transformed.has_value() || !orientation_transformed.has_value()) {
+            ROS_ERROR_STREAM("[RLController]: Could not get transform state to frame " << m_current_goal_reference_frame);
+            return mrs_msgs::AttitudeCommand::ConstPtr();
+        }
+        uav_state.pose.position = position_transformed.value();
+        uav_state.pose.orientation = orientation_transformed.value();
+        uav_state.velocity.linear = velocity_transformed.value();
 
 
         // Get rotation matrix from orientation quaternion

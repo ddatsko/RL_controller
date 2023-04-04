@@ -7,7 +7,6 @@
 
 #include <mrs_lib/transformer.h>
 #include <nav_msgs/Odometry.h>
-#include <mrs_msgs/ReferenceSrv.h>
 #include <vector>
 #include <string>
 
@@ -46,6 +45,7 @@ namespace rl_goals_checker {
 
         ros::ServiceClient m_set_goal_service_client;
         ros::Subscriber m_odometry_subscriber;
+        ros::Publisher m_current_goal_publisher;
 
         Eigen::Vector3d m_previous_position;
         bool m_previous_position_received = false;

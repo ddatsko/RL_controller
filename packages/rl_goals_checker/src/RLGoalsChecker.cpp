@@ -3,6 +3,7 @@
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/transformer.h>
 #include <yaml-cpp/yaml.h>
+#include <mrs_msgs/ReferenceStampedSrv.h>
 
 
 namespace rl_goals_checker {
@@ -29,6 +30,7 @@ namespace rl_goals_checker {
                     g.direction.x() = goal["direction"][0].as<float>();
                     g.direction.y() = goal["direction"][1].as<float>();
                     g.direction.z() = goal["direction"][2].as<float>();
+                    g.direction.normalize();
 
                     read_goals.push_back(g);
 
@@ -102,7 +104,9 @@ namespace rl_goals_checker {
             ROS_INFO_STREAM("[RLGoalsChecker]: Successfully read " << m_goals_to_visit.size() << " goals from file");
         }
 
-        m_set_goal_service_client = nh.serviceClient<mrs_msgs::ReferenceSrv>(
+        m_current_goal_publisher = nh.advertise<geometry_msgs::PoseStamped>("goals_out", 10);
+
+        m_set_goal_service_client = nh.serviceClient<mrs_msgs::ReferenceStampedSrv>(
                 "/" + m_uav_name + "/control_manager/rl_controller/set_goal");
         ROS_INFO_STREAM("[RLGoalsChecker]: Waiting for existence of service server...");
         m_set_goal_service_client.waitForExistence();
@@ -147,11 +151,28 @@ namespace rl_goals_checker {
     }
 
     void RLGoalsChecker::send_current_goal() {
-        mrs_msgs::ReferenceSrv set_goal_request;
+        mrs_msgs::ReferenceStampedSrv set_goal_request;
+        set_goal_request.request.header.frame_id = m_goal_frame_id;
+
         set_goal_request.request.reference.position.x = m_goals_to_visit[m_current_goal].position.x();
         set_goal_request.request.reference.position.y = m_goals_to_visit[m_current_goal].position.y();
         set_goal_request.request.reference.position.z = m_goals_to_visit[m_current_goal].position.z();
+
+        geometry_msgs::PoseStamped goal;
+        goal.header = set_goal_request.request.header;
+        goal.pose.position = set_goal_request.request.reference.position;
+
+        // Call the service as soon as possible
         m_set_goal_service_client.call(set_goal_request);
+
+        Eigen::Vector3d initial_rotation{1, 0, 0};
+        auto orientation = Eigen::Quaterniond().setFromTwoVectors(initial_rotation, m_goals_to_visit[m_current_goal].direction);
+        goal.pose.orientation.x = orientation.x();
+        goal.pose.orientation.y = orientation.y();
+        goal.pose.orientation.z = orientation.z();
+        goal.pose.orientation.w = orientation.w();
+
+        m_current_goal_publisher.publish(goal);
     }
 
 
