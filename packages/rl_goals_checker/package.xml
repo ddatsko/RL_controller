@@ -17,6 +17,7 @@
   <depend>std_msgs</depend>
   <depend>mrs_lib</depend>
   <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
 
   <export>
     <nodelet plugin="${prefix}/plugins.xml" />

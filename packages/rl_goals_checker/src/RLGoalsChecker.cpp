@@ -105,6 +105,7 @@ namespace rl_goals_checker {
         }
 
         m_current_goal_publisher = nh.advertise<geometry_msgs::PoseStamped>("goals_out", 10);
+        m_pub_all_goals =  nh.advertise<geometry_msgs::PoseArray>("all_goals", 1);
 
         m_set_goal_service_client = nh.serviceClient<mrs_msgs::ReferenceStampedSrv>(
                 "/" + m_uav_name + "/control_manager/rl_controller/set_goal");
@@ -113,10 +114,11 @@ namespace rl_goals_checker {
         ROS_INFO_STREAM("[RLGoalsChecker]: Service server is present. Continuing");
         send_current_goal();
 
-        m_odometry_subscriber = nh.subscribe("odometry_in", 10, &RLGoalsChecker::m_odometry_callback,
-                                             this);
+        m_odometry_subscriber = nh.subscribe("odometry_in", 10, &RLGoalsChecker::m_odometry_callback, this);
 
         m_transformer = mrs_lib::Transformer("RLGoalsChecker");
+
+        m_tim_goals = nh.createTimer(ros::Duration(0.1), &RLGoalsChecker::tim_markers_pb, this);
 
         ROS_INFO_ONCE("[RLGoalsChecker]: initialized");
     }
@@ -148,6 +150,31 @@ namespace rl_goals_checker {
             send_current_goal();
         }
         m_previous_position = position;
+    }
+
+    void RLGoalsChecker::tim_markers_pb([[maybe_unused]] const ros::TimerEvent &ev) {
+        geometry_msgs::PoseArray msg;
+        msg.header.stamp = ros::Time::now();
+        msg.header.frame_id = m_goal_frame_id;
+        for (Goal& ps: m_goals_to_visit) {
+
+            geometry_msgs::Pose pose;
+
+            pose.position.x = ps.position.x();
+            pose.position.y = ps.position.y();
+            pose.position.z = ps.position.z();
+
+            Eigen::Vector3d init_rotation{1, 0, 0};
+            auto ori = Eigen::Quaterniond().setFromTwoVectors(init_rotation, ps.direction);
+
+            pose.orientation.x = ori.x();
+            pose.orientation.y = ori.y();
+            pose.orientation.z = ori.z();
+            pose.orientation.w = ori.w();
+
+            msg.poses.push_back(pose);
+        }
+        m_pub_all_goals.publish(msg);
     }
 
     void RLGoalsChecker::send_current_goal() {
