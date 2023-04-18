@@ -45,8 +45,9 @@ windows:
   - rviz:
       layout: tiled
       panes:
-        - waitForControl; roslaunch mrs_uav_testing rviz_random_simulation.launch
-        - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+        - waitForControl; roscd rl_goals_checker; ./scripts/change_uav.sh ${UAV_NAME}; rviz -d $(rospack find rl_goals_checker)/../../rviz/markers.rviz
+          # roslaunch mrs_uav_testing rviz_random_simulation.launch
+          # - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
   - easy_control:
       layout: tiled
       panes:

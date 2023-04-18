@@ -4,8 +4,11 @@
 #include <ros/package.h>
 #include <nodelet/nodelet.h>
 #include <cstdlib>
+#include <functional>
 
 #include <mrs_lib/transformer.h>
+#include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/Pose.h>
 #include <nav_msgs/Odometry.h>
 #include <vector>
 #include <string>
@@ -45,7 +48,9 @@ namespace rl_goals_checker {
 
         ros::ServiceClient m_set_goal_service_client;
         ros::Subscriber m_odometry_subscriber;
+
         ros::Publisher m_current_goal_publisher;
+        ros::Publisher m_pub_all_goals;
 
         Eigen::Vector3d m_previous_position;
         bool m_previous_position_received = false;
@@ -53,6 +58,9 @@ namespace rl_goals_checker {
         void m_odometry_callback(const nav_msgs::Odometry &odom_msg);
 
         void send_current_goal();
+
+        ros::Timer m_tim_goals;
+        void tim_markers_pb([[maybe_unused]] const ros::TimerEvent &ev);
 
         mrs_lib::Transformer m_transformer;
     };

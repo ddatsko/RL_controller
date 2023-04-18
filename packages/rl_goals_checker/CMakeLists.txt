@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
         std_msgs
         mrs_lib
         nav_msgs
-
+        geometry_msgs
         )
 
 find_package(yaml-cpp REQUIRED)
