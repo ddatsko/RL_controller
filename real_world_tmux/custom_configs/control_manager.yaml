@@ -1,0 +1,41 @@
+safety:
+
+  escalating_failsafe:
+
+    # how often does it allow to escalate
+    timeout: 2.0 # [s]
+
+    ehover: true
+    eland: true
+    failsafe: true
+
+
+controllers : [
+  "Se3Controller",
+  "MpcController",
+  "FailsafeController",
+  "EmergencyController",
+  "RLController"
+]
+
+
+Se3Controller:
+  address: "mrs_uav_controllers/Se3Controller"
+  namespace: "se3_controller"
+  eland_threshold: 2.0 # [m], position error triggering eland
+  failsafe_threshold: 3.0 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 2.0 # [m], position odometry innovation threshold
+
+ 
+RLController:
+  address: "rl_controller/RLController"
+  namespace: "rl_controller"
+  eland_threshold: 0.0 # [m], position error triggering eland
+  failsafe_threshold: 0.0 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 0.0 # [m], position odometry innovation threshold
+  human_switchable: true
+
+
+rl_controller:
+  rl_policy_filename: "/home/mrs/flightsim/test.pt"
+

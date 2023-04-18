@@ -1,0 +1,4 @@
+- Right policy filename is specified in custom_configs/control_manager.yaml
+- Right environment file specified in custom_configs/rl_goals_checker.yaml
+- RTK is used for odometry
+
