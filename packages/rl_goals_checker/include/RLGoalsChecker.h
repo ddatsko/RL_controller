@@ -43,10 +43,12 @@ namespace rl_goals_checker {
     private:
         std::string m_goal_frame_id;
         std::string m_uav_name;
+        std::string m_controller_after_following;
         size_t m_current_goal = 0;
         std::vector<Goal> m_goals_to_visit;
 
         ros::ServiceClient m_set_goal_service_client;
+        ros::ServiceClient m_change_controller_serivice_client;
         ros::Subscriber m_odometry_subscriber;
 
         ros::Publisher m_current_goal_publisher;

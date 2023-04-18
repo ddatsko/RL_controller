@@ -4,6 +4,7 @@
 #include <mrs_lib/transformer.h>
 #include <yaml-cpp/yaml.h>
 #include <mrs_msgs/ReferenceStampedSrv.h>
+#include <mrs_msgs/String.h>
 
 
 namespace rl_goals_checker {
@@ -85,6 +86,8 @@ namespace rl_goals_checker {
         pl.loadParam("UAV_NAME", m_uav_name);
         pl.loadParam("environment_configuration_file", environment_config_filename);
         pl.loadParam("goal_frame_id", m_goal_frame_id);
+        pl.loadParam("controller_after_following", m_controller_after_following);
+
 
         if (!pl.loadedSuccessfully()) {
             ROS_ERROR("[RLGoalsChecker]: failed to load non-optional parameters!");
@@ -106,6 +109,8 @@ namespace rl_goals_checker {
 
         m_current_goal_publisher = nh.advertise<geometry_msgs::PoseStamped>("goals_out", 10);
         m_pub_all_goals =  nh.advertise<geometry_msgs::PoseArray>("all_goals", 1);
+
+        m_change_controller_serivice_client = nh.serviceClient<mrs_msgs::String>("/" + m_uav_name + "/control_manager/switch_controller");
 
         m_set_goal_service_client = nh.serviceClient<mrs_msgs::ReferenceStampedSrv>(
                 "/" + m_uav_name + "/control_manager/rl_controller/set_goal");
@@ -130,6 +135,10 @@ namespace rl_goals_checker {
             return;
         }
 
+        if (m_current_goal >= m_goals_to_visit.size()) {
+            return;
+        }
+
         Eigen::Vector3d position = {odom_position->pose.pose.position.x,
                                     odom_position->pose.pose.position.y,
                                     odom_position->pose.pose.position.z};
@@ -144,7 +153,20 @@ namespace rl_goals_checker {
             ROS_INFO_STREAM("[RLGoalsChecker]: UAV reached goal: \n" << m_goals_to_visit[m_current_goal].position);
 
             // TODO: change the behaviour when last goal reached. Maybe, change controller to MPC or so
-            m_current_goal = std::min(m_current_goal + 1, m_goals_to_visit.size() - 1);
+            ++m_current_goal;
+
+            if (m_current_goal >= m_goals_to_visit.size()) {
+                ROS_INFO_STREAM("[RLGoalsChecker]: Last goal reached. Switching controller to " << m_controller_after_following);
+                mrs_msgs::String change_controller_request;
+                change_controller_request.request.value = m_controller_after_following;
+                m_change_controller_serivice_client.call(change_controller_request);
+                if (!change_controller_request.response.success) {
+                    ROS_WARN_STREAM("[RLGoalsChecker]: Could not change controller to " << m_controller_after_following << ". Error: " << change_controller_request.response.message);
+                } else {
+                    ROS_INFO_STREAM("[RLGoalsChecker]: Successfully changed controller to " << m_controller_after_following);
+                }
+                return;
+            }
 
             // If the goal is reached -- send a new one to the controller
             send_current_goal();
