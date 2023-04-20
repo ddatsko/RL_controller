@@ -23,6 +23,8 @@
     <arg name="odometry_topic" default="/$(arg UAV_NAME)/odometry/odom_local" />
     <arg name="goal_frame_id" default="$(arg UAV_NAME)/local_origin" />
     <arg name="goals_post_topic" default="/$(arg UAV_NAME)/rl_goals_out" />
+    <arg name="max_allowed_velocity" default="1.5" />
+
 
     <!-- Namespace - all topics and parameters will be remapped using this namespace as a prefix (eg.: "/vision_example/image_in" to "/uav1/vision_example/image_in") -->
     <group ns="$(arg UAV_NAME)">
@@ -31,6 +33,7 @@
         <node pkg="nodelet" type="nodelet" name="rl_goals_checker" args="$(arg nodelet) rl_goals_checker/RLGoalsChecker $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
             <param name="UAV_NAME" type="string" value="$(arg UAV_NAME)"/>
             <param name="goal_frame_id" type="string" value="$(arg goal_frame_id)" />
+            <param name="max_allowed_velocity" type="double" value="$(arg max_allowed_velocity)" />
 
             <!-- ROS parameters config file -->
             <rosparam file="$(find rl_goals_checker)/config/default.yaml" />

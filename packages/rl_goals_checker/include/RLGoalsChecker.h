@@ -44,6 +44,8 @@ namespace rl_goals_checker {
         std::string m_goal_frame_id;
         std::string m_uav_name;
         std::string m_controller_after_following;
+        double m_max_allowed_velocity;
+        bool m_controller_switched = false;
         size_t m_current_goal = 0;
         std::vector<Goal> m_goals_to_visit;
 
@@ -60,6 +62,8 @@ namespace rl_goals_checker {
         void m_odometry_callback(const nav_msgs::Odometry &odom_msg);
 
         void send_current_goal();
+
+        void change_controller();
 
         ros::Timer m_tim_goals;
         void tim_markers_pb([[maybe_unused]] const ros::TimerEvent &ev);

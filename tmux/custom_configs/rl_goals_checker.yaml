@@ -1,0 +1,2 @@
+environment_configuration_file: "/home/mrs/flightsim/examples/quadrotor_simulator/config/spiral.yml"
+controller_after_following: "Se3Controller"

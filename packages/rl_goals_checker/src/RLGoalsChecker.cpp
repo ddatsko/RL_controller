@@ -64,8 +64,11 @@ namespace rl_goals_checker {
         if (t >= 0 && t <= 1) {  // only these values mean agent passed by the goal in
             // the current time-step
             Eigen::Vector3d intersect = a + t * v;  // intersection point
-            if (intersect.norm() <= tolerance)  // is the intersection point within tolerance
+            if (intersect.norm() <= tolerance) {  // is the intersection point within tolerance
                 return true;
+            } else {
+
+            }
 
         }
         return false;
@@ -87,6 +90,7 @@ namespace rl_goals_checker {
         pl.loadParam("environment_configuration_file", environment_config_filename);
         pl.loadParam("goal_frame_id", m_goal_frame_id);
         pl.loadParam("controller_after_following", m_controller_after_following);
+        pl.loadParam("max_allowed_velocity", m_max_allowed_velocity);
 
 
         if (!pl.loadedSuccessfully()) {
@@ -108,9 +112,10 @@ namespace rl_goals_checker {
         }
 
         m_current_goal_publisher = nh.advertise<geometry_msgs::PoseStamped>("goals_out", 10);
-        m_pub_all_goals =  nh.advertise<geometry_msgs::PoseArray>("all_goals", 1);
+        m_pub_all_goals = nh.advertise<geometry_msgs::PoseArray>("all_goals", 1);
 
-        m_change_controller_serivice_client = nh.serviceClient<mrs_msgs::String>("/" + m_uav_name + "/control_manager/switch_controller");
+        m_change_controller_serivice_client = nh.serviceClient<mrs_msgs::String>(
+                "/" + m_uav_name + "/control_manager/switch_controller");
 
         m_set_goal_service_client = nh.serviceClient<mrs_msgs::ReferenceStampedSrv>(
                 "/" + m_uav_name + "/control_manager/rl_controller/set_goal");
@@ -129,10 +134,22 @@ namespace rl_goals_checker {
     }
 
     void RLGoalsChecker::m_odometry_callback(const nav_msgs::Odometry &odom_msg) {
+        if (m_controller_switched) {
+            return;
+        }
         auto odom_position = m_transformer.transformSingle(odom_msg, m_goal_frame_id);
         if (!odom_position.has_value()) {
-            ROS_ERROR_STREAM("[RLGoalsChecker]: Could not convert odometry to frame " << m_goal_frame_id << ". Skipping measurement");
+            ROS_ERROR_STREAM("[RLGoalsChecker]: Could not convert odometry to frame " << m_goal_frame_id
+                                                                                      << ". Skipping measurement");
             return;
+        }
+
+        double velocity = std::sqrt(std::pow(odom_msg.twist.twist.linear.x, 2) +
+                                    std::pow(odom_msg.twist.twist.linear.y, 2) +
+                                    std::pow(odom_msg.twist.twist.linear.z, 2));
+        if (velocity >= m_max_allowed_velocity) {
+            ROS_ERROR_STREAM("[RLGoalsChecker]: Maximum allowed velocity of " << m_max_allowed_velocity << " reached. CHanging controller");
+            change_controller();
         }
 
         if (m_current_goal >= m_goals_to_visit.size()) {
@@ -156,15 +173,7 @@ namespace rl_goals_checker {
             ++m_current_goal;
 
             if (m_current_goal >= m_goals_to_visit.size()) {
-                ROS_INFO_STREAM("[RLGoalsChecker]: Last goal reached. Switching controller to " << m_controller_after_following);
-                mrs_msgs::String change_controller_request;
-                change_controller_request.request.value = m_controller_after_following;
-                m_change_controller_serivice_client.call(change_controller_request);
-                if (!change_controller_request.response.success) {
-                    ROS_WARN_STREAM("[RLGoalsChecker]: Could not change controller to " << m_controller_after_following << ". Error: " << change_controller_request.response.message);
-                } else {
-                    ROS_INFO_STREAM("[RLGoalsChecker]: Successfully changed controller to " << m_controller_after_following);
-                }
+                change_controller();
                 return;
             }
 
@@ -178,7 +187,7 @@ namespace rl_goals_checker {
         geometry_msgs::PoseArray msg;
         msg.header.stamp = ros::Time::now();
         msg.header.frame_id = m_goal_frame_id;
-        for (Goal& ps: m_goals_to_visit) {
+        for (Goal &ps: m_goals_to_visit) {
 
             geometry_msgs::Pose pose;
 
@@ -199,6 +208,22 @@ namespace rl_goals_checker {
         m_pub_all_goals.publish(msg);
     }
 
+    void RLGoalsChecker::change_controller() {
+        ROS_INFO_STREAM("[RLGoalsChecker]: Switching controller to " << m_controller_after_following);
+        mrs_msgs::String change_controller_request;
+        change_controller_request.request.value = m_controller_after_following;
+        m_change_controller_serivice_client.call(change_controller_request);
+        if (!change_controller_request.response.success) {
+            ROS_WARN_STREAM(
+                    "[RLGoalsChecker]: Could not change controller to " << m_controller_after_following << ". Error: "
+                                                                        << change_controller_request.response.message);
+        } else {
+            m_controller_switched = true;
+            ROS_INFO_STREAM("[RLGoalsChecker]: Successfully changed controller to " << m_controller_after_following);
+        }
+    }
+
+
     void RLGoalsChecker::send_current_goal() {
         mrs_msgs::ReferenceStampedSrv set_goal_request;
         set_goal_request.request.header.frame_id = m_goal_frame_id;
@@ -215,7 +240,8 @@ namespace rl_goals_checker {
         m_set_goal_service_client.call(set_goal_request);
 
         Eigen::Vector3d initial_rotation{1, 0, 0};
-        auto orientation = Eigen::Quaterniond().setFromTwoVectors(initial_rotation, m_goals_to_visit[m_current_goal].direction);
+        auto orientation = Eigen::Quaterniond().setFromTwoVectors(initial_rotation,
+                                                                  m_goals_to_visit[m_current_goal].direction);
         goal.pose.orientation.x = orientation.x();
         goal.pose.orientation.y = orientation.y();
         goal.pose.orientation.z = orientation.z();
