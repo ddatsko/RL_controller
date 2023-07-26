@@ -28,7 +28,7 @@ windows:
   - goal_checker:
       layout: tiled
       panes:
-        - waitForOdometry; roslaunch rl_goals_checker rl_goals_checker.launch
+        - waitForOdometry; roslaunch rl_goals_checker rl_goals_checker.launch custom_config:=./custom_configs/rl_goals_checker.yaml
  
   - takeoff:
       layout: tiled

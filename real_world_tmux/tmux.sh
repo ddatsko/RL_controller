@@ -39,8 +39,6 @@ input=(
 '
   'NodeChecker' 'waitForRos; roslaunch mrs_uav_general node_crash_checker.launch
 '
-  'Nimbro' 'waitForRos; rosrun mrs_uav_general run_nimbro.py custom_configs/nimbro.yaml custom_configs/uav_names.yaml
-'
   'Sensors' 'waitForRos; roslaunch mrs_uav_general sensors.launch
 '
   'GoalChecker' 'waitForControl; roslaunch rl_goals_checker rl_goals_checker.launch custom_config:=./custom_configs/rl_goals_checker.yaml
