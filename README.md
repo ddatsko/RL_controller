@@ -1,6 +1,6 @@
-## This repository contains ROS nodes and scripts for real-world and simulation experiments with a [Reinforcement Learning controller](https://mrs.felk.cvut.cz/gitlab/agile-flight/flightsim)
+## This repository contains ROS packages and scripts for real-world and simulation experiments with a [Reinforcement Learning controller](https://mrs.felk.cvut.cz/gitlab/agile-flight/flightsim)
 
-Inside of `packages` directory, there are two packages that are designed to complement each other:
+Inside of `packages` directory, there are two ROS packages that are designed to complement each other:
 * `rl_controller` contains a controller module that can be inserted into MRS system `control_manager` as a plugin. It loads the RL policy and creates a service waiting for a waypoint to go to
 * `rl_goals_checker` loads the environment file with goals and publishes the next goal to `rl_controller` when the current one is reached. It also implements some failsafe like switching to an emergency controller when a goal is missed or UAV speed is too high
 
