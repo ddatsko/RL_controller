@@ -22,7 +22,7 @@ namespace rl_goals_checker {
             auto goals = root_node["environment_configuration"]["goals"];
             for (auto &&goal: goals) {
                 try {
-                    Goal g;
+                   Goal g;
                     g.tolerance = goal["tolerance"].as<float>();
                     g.position.x() = goal["position"][0].as<float>();
                     g.position.y() = goal["position"][1].as<float>();
@@ -49,13 +49,13 @@ namespace rl_goals_checker {
     }
 
 
-    bool Goal::reached(const Eigen::Vector3d &prev_pos, const Eigen::Vector3d &current_pos) const {
+    Goal::STATUS Goal::reached(const Eigen::Vector3d &prev_pos, const Eigen::Vector3d &current_pos) const {
         Eigen::Vector3d v = current_pos - prev_pos;  // step movement vector
         Eigen::Vector3d n = direction;           // goal direction vector
         double vTn = v.dot(n);          // dot product of the vector
 
         // either runs in parallel or passed in other direction
-        if (vTn <= 0.0) return false;
+        if (vTn <= 0.0) return STATUS::NOT_REACHED;
 
         Eigen::Vector3d a = prev_pos - position;  // vector from initial position to goal position
         // how many times the current would be taken to pass the goal (can be
@@ -65,13 +65,13 @@ namespace rl_goals_checker {
             // the current time-step
             Eigen::Vector3d intersect = a + t * v;  // intersection point
             if (intersect.norm() <= tolerance) {  // is the intersection point within tolerance
-                return true;
+                return STATUS::REACHED;
             } else {
-
+                return STATUS::MISSED;
             }
 
         }
-        return false;
+        return STATUS::NOT_REACHED;
     }
 
     void RLGoalsChecker::onInit() {
@@ -166,7 +166,8 @@ namespace rl_goals_checker {
             return;
         }
 
-        if (m_goals_to_visit[m_current_goal].reached(m_previous_position, position)) {
+        auto goal_status = m_goals_to_visit[m_current_goal].reached(m_previous_position, position);
+        if (goal_status == Goal::STATUS::REACHED) {
             ROS_INFO_STREAM("[RLGoalsChecker]: UAV reached goal: \n" << m_goals_to_visit[m_current_goal].position);
 
             // TODO: change the behaviour when last goal reached. Maybe, change controller to MPC or so
@@ -179,6 +180,10 @@ namespace rl_goals_checker {
 
             // If the goal is reached -- send a new one to the controller
             send_current_goal();
+        } else if (goal_status == Goal::STATUS::MISSED) {
+            ROS_ERROR_STREAM("[RLGoalsChecker]: Goal missed: \n" << m_goals_to_visit[m_current_goal].position);
+            change_controller();
+            return;
         }
         m_previous_position = position;
     }

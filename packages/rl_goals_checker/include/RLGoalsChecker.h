@@ -17,6 +17,14 @@
 namespace rl_goals_checker {
     class Goal {
     public:
+        enum STATUS {
+            REACHED,
+            NOT_REACHED,
+            MISSED
+        };
+
+
+
         Eigen::Vector3d position;
         Eigen::Vector3d direction;
         double tolerance;
@@ -26,7 +34,7 @@ namespace rl_goals_checker {
         Goal(const Eigen::Vector3d &position, const Eigen::Vector3d &direction, double tolerance) :
                 position{position}, direction{direction}, tolerance{tolerance} {};
 
-        [[nodiscard]] bool reached(const Eigen::Vector3d &prev_pos, const Eigen::Vector3d &current_pos) const;
+        [[nodiscard]] STATUS reached(const Eigen::Vector3d &prev_pos, const Eigen::Vector3d &current_pos) const;
     };
 
     /*!
